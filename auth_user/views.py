@@ -22,6 +22,11 @@ from auth_user.serializers import UserRegistrationSerializer, UserProfileSeriali
 
 
 def get_tokens_for_user(user):
+    """
+    Manually generating token
+    :param user: user
+    :return: refresh token and access token
+    """
     refresh = RefreshToken.for_user(user)
 
     return {
@@ -38,7 +43,6 @@ class UserRegistrationView(APIView):
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
-            print('serializer valid')
             user = serializer.save()
             token = get_tokens_for_user(user)
             return Response({'token': token, 'data': serializer.data, 'msg': "User created successfully."},
@@ -84,10 +88,12 @@ class UserProfileView(APIView):
 
     def get(self, request):
         """Retrieve a project based on the request API key."""
-        print("inside get")
-        key = request.META["HTTP_AUTHORIZATION"].split()[1]
-        print("key")
-        api_key_user = User.objects.get(api_key='389e9c90-ea8f-4f1a-9883-d312795a22f1')
-        print(api_key_user, "llll")
-        serializer = UserProfileSerializer(api_key_user)
+        get_key = request.META.get("HTTP_X_API_KEY")
+        if get_key:
+            key = get_key.split()[1]
+            api_key_user = User.objects.get(api_key=key)
+            serializer = UserProfileSerializer(api_key_user)
+        else:
+            user = self.get_object(request)
+            serializer = UserProfileSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
