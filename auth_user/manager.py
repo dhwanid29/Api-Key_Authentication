@@ -22,7 +22,7 @@ class UserManager(BaseUserManager):
         birth and password.
         """
         user = self.create_user(
-            email,
+            email=email,
             password=password,
             username=username,
             api_key=api_key

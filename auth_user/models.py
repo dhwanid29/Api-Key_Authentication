@@ -10,7 +10,6 @@ class User(AbstractBaseUser):
     """
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=50)
-    api_key = models.UUIDField(default=uuid.uuid4, editable=False)
     is_admin = models.BooleanField(default=False)
 
     objects = UserManager()
@@ -21,12 +20,21 @@ class User(AbstractBaseUser):
     def __str__(self):
         return self.email
 
-    def has_perm(self, perm, obj=None):
+    def has_perm(self):
         return True
 
-    def has_module_perms(self, app_label):
+    def has_module_perms(self):
         return True
 
     @property
     def is_staff(self):
         return self.is_admin
+
+
+class UserApiKey(models.Model):
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    api_key = models.UUIDField(default=uuid.uuid4, editable=False)
+    created_date = models.DateField(auto_now_add=True)
+    expiry_date = models.DateField(null=True)
+    is_deleted = models.BooleanField(default=False)

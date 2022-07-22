@@ -1,12 +1,11 @@
-from tokenize import TokenError
-
+from datetime import date
 from rest_framework import HTTP_HEADER_ENCODING
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from django.utils.translation import gettext_lazy as _
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.settings import api_settings
-from auth_user.models import User
+from auth_user.models import UserApiKey
 
 
 class ApiAuth(JWTAuthentication):
@@ -14,43 +13,42 @@ class ApiAuth(JWTAuthentication):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.AUTH_HEADER_TYPES = None
+        self.auth_prefix = None
+        self.header = None
 
     def get_header(self, request):
         """
         Extracts the header containing the JSON web token from the given
         request.
         """
-        try:
-            get_authorization = request.META.get('HTTP_AUTHORIZATION')
-            get_authorization_key = request.META.get('HTTP_X_API_KEY')
 
-            if get_authorization:
-                auth = get_authorization.split()[0]
-            elif get_authorization_key:
-                auth = get_authorization_key.split()[0]
-            if auth == 'Bearer':
+        get_authorization = request.META.get('HTTP_AUTHORIZATION')
+        get_authorization_key = request.META.get('HTTP_X_API_KEY')
+
+        if get_authorization:
+            self.auth_prefix = get_authorization.split()[0].lower()
+            if self.auth_prefix == 'bearer':
                 self.AUTH_HEADER_TYPES = ('Bearer',)
-            else:
+                self.header = request.META.get(api_settings.AUTH_HEADER_NAME)
+        elif get_authorization_key:
+            self.auth_prefix = get_authorization_key.split()[0].lower()
+            if self.auth_prefix == 'api-key':
                 self.AUTH_HEADER_TYPES = ('Api-Key',)
-        except Exception as e:
-            raise ValidationError("Authentication credentials are required.")
-        if auth == 'Bearer':
-            header = request.META.get(api_settings.AUTH_HEADER_NAME)
-        elif auth == 'Api-Key':
-            header = get_authorization_key
+                self.header = get_authorization_key
+        else:
+            raise ValidationError('Authentication credentials are required.')
 
-        if isinstance(header, str):
-            # Work around django test client oddness
-            header = header.encode(HTTP_HEADER_ENCODING)
+        if isinstance(self.header, str):
+            self.header = self.header.encode(HTTP_HEADER_ENCODING)
 
-        return header
+        return self.header
 
     def get_raw_token(self, header):
         """
         Extracts an unvalidated JSON web token from the given "Authorization"
         header value.
         """
-        parts = header.split()
+        parts = self.header.split()
 
         if len(parts) == 0:
             return None
@@ -77,6 +75,7 @@ class ApiAuth(JWTAuthentication):
             for AuthToken in api_settings.AUTH_TOKEN_CLASSES:
                 try:
                     return AuthToken(header)
+
                 except TokenError as e:
                     messages.append(
                         {
@@ -93,7 +92,7 @@ class ApiAuth(JWTAuthentication):
                 }
             )
         elif self.AUTH_HEADER_TYPES[0] == 'Api-Key':
-            return header
+            return self.header
 
     def get_user(self, header):
         """
@@ -117,17 +116,18 @@ class ApiAuth(JWTAuthentication):
             return user
         elif self.AUTH_HEADER_TYPES[0] == 'Api-Key':
 
-            key = header.split()
-            api_key = str(key[0], 'UTF-8')
-
+            key = self.header.split()
+            api_key = str(key[1], 'UTF-8')
             try:
-                user_id = User.objects.filter(api_key=api_key).first()
-
-            except:
+                user_id = UserApiKey.objects.filter(api_key=api_key).first()
+            except Exception as e:
                 raise ValidationError("Key contained no recognizable user identification")
 
             try:
-                user = self.user_model.objects.get(**{api_settings.USER_ID_FIELD: user_id.id})
+                if user_id.expiry_date is not None:
+                    if user_id.expiry_date < date.today() or user_id.is_deleted is not False:
+                        raise InvalidToken('Invalid Token. Token Expired')
+                user = self.user_model.objects.get(**{api_settings.USER_ID_FIELD: user_id.user.id})
             except self.user_model.DoesNotExist:
                 raise AuthenticationFailed(_("User not found"), code="user_not_found")
 
