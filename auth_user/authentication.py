@@ -9,6 +9,12 @@ from auth_user.models import UserApiKey
 
 
 class ApiAuth(JWTAuthentication):
+    """
+    Overrode JWTAuthentication Middleware
+    This class Fetches the header whether it be Authorization or Api-Key, If the header is something else other than
+    these two then it throws error, else the Token or Api-Key is verified. If the user enters both Token and Api-Key,
+    then authorization takes place using the token.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -119,7 +125,7 @@ class ApiAuth(JWTAuthentication):
             key = self.header.split()
             api_key = str(key[1], 'UTF-8')
             try:
-                user_id = UserApiKey.objects.filter(api_key=api_key).first()
+                user_id = UserApiKey.objects.get(api_key=api_key)
             except Exception as e:
                 raise ValidationError("Key contained no recognizable user identification")
 
